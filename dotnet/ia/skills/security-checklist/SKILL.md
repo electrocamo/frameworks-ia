@@ -49,30 +49,29 @@ DATABASE
 ## JWT — Secure configuration
 
 ```csharp
-// src/MyApi.Api/Program.cs
+// src/Api/MyApi/Program.cs
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,           // Verify the token issuer
-            ValidateAudience = true,          // Verify the intended audience
-            ValidateLifetime = true,          // Reject expired tokens
-            ValidateIssuerSigningKey = true,  // Verify the cryptographic signature
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
 
             ValidIssuer = configuration["Jwt:Issuer"],
             ValidAudience = configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(configuration["Jwt:Secret"]!)),
 
-            ClockSkew = TimeSpan.FromSeconds(30) // Minimal tolerance for clock drift
+            ClockSkew = TimeSpan.FromSeconds(30)
         };
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = ctx =>
             {
-                // Log internally — do NOT expose details to the client
                 ctx.HttpContext.RequestServices
                     .GetRequiredService<ILogger<Program>>()
                     .LogWarning("JWT authentication failed: {Error}", ctx.Exception.Message);
@@ -94,7 +93,7 @@ builder.Services.AddAuthorizationBuilder()
 
 ```csharp
 // DEVELOPMENT — User Secrets
-// dotnet user-secrets set "Jwt:Secret" "value" --project src/MyApi.Api
+// dotnet user-secrets set "Jwt:Secret" "value" --project src/Api/MyApi
 
 // PRODUCTION — Environment variables (__ is the hierarchical separator)
 // JWT__SECRET=value
@@ -104,7 +103,7 @@ if (!builder.Environment.IsDevelopment())
 {
     builder.Configuration.AddAzureKeyVault(
         new Uri(configuration["KeyVault:Url"]!),
-        new DefaultAzureCredential()); // no hardcoded credentials
+        new DefaultAzureCredential());
 }
 
 // ✅ appsettings.json — structure only, values always empty
@@ -123,7 +122,6 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // Global: 100 req/min per IP
     options.AddFixedWindowLimiter("Global", o =>
     {
         o.PermitLimit = 100;
@@ -132,16 +130,14 @@ builder.Services.AddRateLimiter(options =>
         o.QueueLimit = 10;
     });
 
-    // Auth endpoints: 10 attempts/min — prevents brute force
     options.AddFixedWindowLimiter("Auth", o =>
     {
         o.PermitLimit = 10;
         o.Window = TimeSpan.FromMinutes(1);
-        o.QueueLimit = 0; // reject immediately, do not queue
+        o.QueueLimit = 0;
     });
 });
 
-// Apply strict policy on authentication endpoints
 [HttpPost("login")]
 [AllowAnonymous] // public because it IS the login endpoint
 [EnableRateLimiting("Auth")]
@@ -195,7 +191,7 @@ var products = await _context.Products
 ## HTTP Security Headers
 
 ```csharp
-// src/MyApi.Api/Program.cs — add before app.MapControllers()
+// src/Api/MyApi/Program.cs — add before app.MapControllers()
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");

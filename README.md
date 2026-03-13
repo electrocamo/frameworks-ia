@@ -7,7 +7,7 @@ Base frameworks to build AI-first solutions with React and .NET, using explicit 
 This repository is a **foundation/blueprint** for two technology stacks:
 
 - `react/`: frontend framework guidelines for React 18 + TypeScript + Vite.
-- `dotnet/`: backend framework guidelines for ASP.NET Core .NET 8 with Clean Architecture.
+- `dotnet/`: backend framework guidelines for ASP.NET Core .NET 10 — Modular Monolith with Clean Architecture per module.
 
 It is designed so developers and AI agents can work with the same standards from day one.
 
@@ -51,8 +51,27 @@ frameworks-IA/
       architecture-patterns/
       security-checklist/
     src/
-      MyApi.Catalog/AGENTS.md
-      MyApi.Payments/AGENTS.md
+      Api/MyApi/                          ← Host project (Program.cs, DI root)
+      CommonUtils/                        ← Shared cross-cutting helpers
+      Modules/
+        ModuleAModule/                    ← Full module (owns data)
+          ModuleA.Api/
+          ModuleA.Application/
+          ModuleA.Contracts/
+          ModuleA.DbMigrator/
+          ModuleA.Domain/
+          ModuleA.Infrastructure/
+          AGENTS.md
+        ModuleBModule/                    ← Module with its own AGENTS.md
+          ModuleB.Api/
+          ModuleB.Application/
+          ModuleB.Contracts/
+          ModuleB.Domain/
+          ModuleB.Infrastructure/
+          AGENTS.md
+      Tests/
+        ModuleA.Test/
+        ModuleB.Test/
 ```
 
 ## React framework (`react/`)
@@ -75,17 +94,30 @@ Domain feature guidance includes:
 
 Defined stack and standards:
 
-- ASP.NET Core .NET 8 (LTS)
-- Clean Architecture
+- ASP.NET Core .NET 10 (LTS)
+- Modular Monolith with Clean Architecture per module
 - MediatR + FluentValidation
 - EF Core 8 + PostgreSQL 16
 - Result Pattern + ProblemDetails
 - Serilog + testing layers (unit, integration, architecture)
 
+Each module follows this layer structure:
+
+| Layer | Purpose |
+|---|---|
+| `{Module}.Domain` | Entities, Value Objects, domain errors |
+| `{Module}.Application` | Commands, Queries, Handlers, Validators (MediatR) |
+| `{Module}.Contracts` | DTOs and interfaces shared across modules |
+| `{Module}.DbMigrator` | EF Core migrations for this module |
+| `{Module}.Infrastructure` | EF DbContext, repositories, external services |
+| `{Module}.Api` | Controllers / endpoints for this module |
+
+Lightweight modules (no persistence) only need: `Api`, `Application`, `Contracts`.
+
 Domain module guidance includes:
 
-- `MyApi.Catalog`: cache rules, search strategy, query/pagination constraints.
-- `MyApi.Payments`: Stripe safety rules, idempotency, webhook validation, transaction safety.
+- `ModuleAModule`: cache rules, search strategy, query/pagination constraints.
+- `ModuleBModule`: Stripe safety rules, idempotency, webhook validation, transaction safety.
 
 ## How to use this repository
 
@@ -115,7 +147,7 @@ pnpm build
 docker-compose up -d
 dotnet restore
 dotnet build
-dotnet run --project src/MyApi.Api
+dotnet run --project src/Api/MyApi
 dotnet test
 ```
 

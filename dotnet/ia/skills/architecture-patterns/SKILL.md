@@ -25,7 +25,7 @@ The most critical pattern in the project. Every method that can fail for busines
 reasons returns `Result<T>` — it never throws exceptions for normal control flow.
 
 ```csharp
-// src/MyApi.Domain/Common/Result.cs
+// src/CommonUtils/Result.cs (or in a shared Domain base if preferred)
 public sealed class Result<TValue>
 {
     private readonly TValue? _value;
@@ -70,7 +70,7 @@ public enum ErrorType { None, NotFound, Validation, Conflict, Failure }
 
 **Full flow Domain → Controller:**
 ```csharp
-// Domain
+// Domain — src/Modules/ModuleAModule/ModuleA.Domain/Entities/Order.cs
 public Result Confirm()
 {
     if (Status != OrderStatus.Pending)
@@ -79,7 +79,7 @@ public Result Confirm()
     return Result.Success();
 }
 
-// Handler
+// Handler — src/Modules/ModuleAModule/ModuleA.Application/Orders/Commands/ConfirmOrder/...
 var order = await _orders.GetByIdAsync(command.Id, ct);
 if (order is null) return OrderErrors.NotFound(command.Id);
 var result = order.Confirm();
@@ -87,7 +87,7 @@ if (result.IsFailure) return result.Error;
 await _unitOfWork.SaveChangesAsync(ct);
 return Result.Success();
 
-// Controller
+// Controller — src/Modules/ModuleAModule/ModuleA.Api/Controllers/OrdersController.cs
 return result.IsSuccess ? NoContent() : result.Error.ToProblemResult(this);
 ```
 
@@ -98,7 +98,7 @@ return result.IsSuccess ? NoContent() : result.Error.ToProblemResult(this);
 For domain attributes with their own semantics (money, email, coordinates, etc.).
 
 ```csharp
-// src/MyApi.Domain/ValueObjects/Money.cs
+// src/Modules/ModuleAModule/ModuleA.Domain/ValueObjects/Money.cs
 public sealed record Money
 {
     public decimal Amount { get; }
@@ -139,7 +139,7 @@ public sealed record Money
 For typed, startup-validatable configuration.
 
 ```csharp
-// src/MyApi.Api/Options/JwtSettings.cs
+// src/Api/MyApi/Options/JwtSettings.cs
 public sealed class JwtSettings
 {
     public const string SectionName = "Jwt";
@@ -155,7 +155,7 @@ builder.Services
     .AddOptions<JwtSettings>()
     .BindConfiguration(JwtSettings.SectionName)
     .ValidateDataAnnotations()
-    .ValidateOnStart(); // fail fast, not on first request
+    .ValidateOnStart();
 
 // Injection into services
 public class JwtTokenService(IOptions<JwtSettings> options)
@@ -173,7 +173,7 @@ Execute automatically around every Handler. Registration order = execution order
 ```csharp
 // Execution order: LoggingBehavior → ValidationBehavior → Handler
 
-// src/MyApi.Application/Common/Behaviors/LoggingBehavior.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Common/Behaviors/LoggingBehavior.cs
 public sealed class LoggingBehavior<TRequest, TResponse>
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -194,7 +194,7 @@ public sealed class LoggingBehavior<TRequest, TResponse>
     }
 }
 
-// src/MyApi.Application/Common/Behaviors/ValidationBehavior.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Common/Behaviors/ValidationBehavior.cs
 public sealed class ValidationBehavior<TRequest, TResponse>
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -219,7 +219,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>
     }
 }
 
-// Registration in DependencyInjection.cs (order matters)
+// Registration in the module's DependencyInjection.cs (order matters)
 services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
@@ -234,20 +234,22 @@ services.AddMediatR(cfg =>
 
 ```csharp
 // INTERFACE in Domain — no EF Core references allowed here
+// src/Modules/ModuleAModule/ModuleA.Domain/Repositories/IProductRepository.cs
 public interface IProductRepository
 {
     Task<Product?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<PagedResult<Product>> GetPagedAsync(int page, int pageSize, CancellationToken ct = default);
     Task AddAsync(Product product, CancellationToken ct = default);
-    void Update(Product product);   // sync: EF only marks entity as Modified
+    void Update(Product product);
     void Delete(Product product);
 }
 
 // IMPLEMENTATION in Infrastructure
+// src/Modules/ModuleAModule/ModuleA.Infrastructure/Repositories/ProductRepository.cs
 public sealed class ProductRepository : IProductRepository
 {
-    private readonly AppDbContext _context;
-    public ProductRepository(AppDbContext context) => _context = context;
+    private readonly ModuleADbContext _context;
+    public ProductRepository(ModuleADbContext context) => _context = context;
 
     public async Task<Product?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await _context.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
@@ -272,7 +274,7 @@ public sealed class ProductRepository : IProductRepository
     public void Delete(Product product) => _context.Products.Remove(product);
 }
 
-// Unit of Work interface
+// Unit of Work interface — in Domain or CommonUtils
 public interface IUnitOfWork
 {
     Task<int> SaveChangesAsync(CancellationToken ct = default);
@@ -291,6 +293,7 @@ Use when an operation has multiple steps that must be compensated on failure.
 ```csharp
 // Example: checkout = create order + charge payment + reduce inventory
 // If any step fails, all previous steps are compensated.
+// src/Modules/ModuleAModule/ModuleA.Application/Checkout/CheckoutSaga.cs
 public sealed class CheckoutSaga
 {
     private readonly IOrderRepository _orders;
@@ -300,35 +303,29 @@ public sealed class CheckoutSaga
 
     public async Task<Result<Guid>> ExecuteAsync(CheckoutCommand command, CancellationToken ct)
     {
-        // Step 1: Create the order
         var orderResult = Order.Create(command.CustomerId, command.Items);
         if (orderResult.IsFailure) return orderResult.Error;
         await _orders.AddAsync(orderResult.Value, ct);
 
-        // Step 2: Charge payment
         var paymentResult = await _payments.ChargeAsync(
             command.Payment, orderResult.Value.Total, ct);
 
         if (paymentResult.IsFailure)
         {
-            // Compensate: cancel the order before returning the error
             orderResult.Value.Cancel("Payment declined");
             await _unitOfWork.SaveChangesAsync(ct);
             return paymentResult.Error;
         }
 
-        // Step 3: Reserve inventory
         var inventoryResult = await _inventory.ReserveAsync(command.Items, ct);
         if (inventoryResult.IsFailure)
         {
-            // Compensate: refund payment before returning the error
             await _payments.RefundAsync(paymentResult.Value.PaymentId, ct);
             orderResult.Value.Cancel("Insufficient stock");
             await _unitOfWork.SaveChangesAsync(ct);
             return inventoryResult.Error;
         }
 
-        // All steps succeeded
         orderResult.Value.Confirm();
         await _unitOfWork.SaveChangesAsync(ct);
         return orderResult.Value.Id;

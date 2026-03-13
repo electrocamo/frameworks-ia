@@ -17,8 +17,8 @@ between this file and `AGENTS.md`, **`AGENTS.md` takes precedence**.
 
 | Concern | Library / Pattern |
 |---|---|
-| Framework | ASP.NET Core .NET 8 LTS |
-| Architecture | Clean Architecture (Domain → Application → Infrastructure → Api) |
+| Framework | ASP.NET Core .NET 10 LTS |
+| Architecture | Modular Monolith — Clean Architecture per module |
 | Mediator | MediatR |
 | Validation | FluentValidation |
 | ORM | Entity Framework Core 8 |
@@ -29,6 +29,28 @@ between this file and `AGENTS.md`, **`AGENTS.md` takes precedence**.
 | Unit tests | xUnit + NSubstitute + FluentAssertions |
 | Integration tests | Testcontainers + WebApplicationFactory |
 | Architecture tests | NetArchTest |
+
+---
+
+## Project Layout
+
+Every module lives under `src/Modules/{Module}Module/` with up to six layers:
+
+```
+src/
+  Api/MyApi/                              ← Host: Program.cs, global middleware, DI root
+  CommonUtils/                            ← Shared cross-cutting helpers
+  Modules/{Module}Module/
+    {Module}.Api/                          ← Controllers / endpoints for this module
+    {Module}.Application/                  ← Commands, Queries, Handlers, Validators (MediatR)
+    {Module}.Contracts/                    ← DTOs and interfaces shared across modules
+    {Module}.DbMigrator/                   ← EF Core migrations for this module
+    {Module}.Domain/                       ← Entities, Value Objects, domain errors
+    {Module}.Infrastructure/               ← EF DbContext, repositories, external services
+  Tests/{Module}.Test/                     ← Unit + integration tests per module
+```
+
+Lightweight modules that own no data only need: `Api`, `Application`, `Contracts`.
 
 ---
 
@@ -69,6 +91,7 @@ _unitOfWork.SaveChangesAsync().Wait();                // deadlock risk
 
 ```csharp
 // ✅ Entities with private setters and factory methods
+// src/Modules/ModuleAModule/ModuleA.Domain/Entities/Product.cs
 public sealed class Product : Entity
 {
     private Product() { }  // EF Core constructor
@@ -77,7 +100,6 @@ public sealed class Product : Entity
     public Money Price { get; private set; } = default!;
     public ProductStatus Status { get; private set; }
 
-    // Factory method is the only creation path
     public static Result<Product> Create(string name, Money price)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -94,7 +116,6 @@ public sealed class Product : Entity
         };
     }
 
-    // Business methods return Result, never void or throw
     public Result Deactivate()
     {
         if (Status == ProductStatus.Inactive)
@@ -105,6 +126,7 @@ public sealed class Product : Entity
 }
 
 // ✅ Domain errors as static members — never magic strings inline
+// src/Modules/ModuleAModule/ModuleA.Domain/Errors/ProductErrors.cs
 public static class ProductErrors
 {
     public static readonly Error InvalidName =
@@ -121,6 +143,7 @@ public static class ProductErrors
 }
 
 // ✅ Value Objects with private constructors and validation
+// src/Modules/ModuleAModule/ModuleA.Domain/ValueObjects/Money.cs
 public sealed record Money
 {
     private Money(decimal amount, string currency)
@@ -149,6 +172,7 @@ public sealed record Money
 
 ```csharp
 // ✅ Commands and queries as immutable records
+// src/Modules/ModuleAModule/ModuleA.Application/Products/Commands/CreateProduct/CreateProductCommand.cs
 public sealed record CreateProductCommand(
     string Name,
     string Description,
@@ -158,6 +182,7 @@ public sealed record CreateProductCommand(
 ) : IRequest<Result<Guid>>;
 
 // ✅ Handler: use repository interface, never DbContext directly
+// src/Modules/ModuleAModule/ModuleA.Application/Products/Commands/CreateProduct/CreateProductCommandHandler.cs
 public sealed class CreateProductCommandHandler
     : IRequestHandler<CreateProductCommand, Result<Guid>>
 {
@@ -176,15 +201,12 @@ public sealed class CreateProductCommandHandler
         CreateProductCommand command,
         CancellationToken ct)
     {
-        // 1. Map to domain value objects
         var priceResult = Money.Create(command.Price, command.Currency);
         if (priceResult.IsFailure) return priceResult.Error;
 
-        // 2. Use domain factory method
         var productResult = Product.Create(command.Name, priceResult.Value);
         if (productResult.IsFailure) return productResult.Error;
 
-        // 3. Persist via repository
         await _products.AddAsync(productResult.Value, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -193,6 +215,7 @@ public sealed class CreateProductCommandHandler
 }
 
 // ✅ Validator — covers all inputs before they reach the handler
+// src/Modules/ModuleAModule/ModuleA.Application/Products/Commands/CreateProduct/CreateProductCommandValidator.cs
 public sealed class CreateProductCommandValidator
     : AbstractValidator<CreateProductCommand>
 {
@@ -221,15 +244,16 @@ public sealed class CreateProductCommandValidator
 
 ```csharp
 // ✅ Repository implementation — AsNoTracking on reads
+// src/Modules/ModuleAModule/ModuleA.Infrastructure/Repositories/ProductRepository.cs
 public sealed class ProductRepository : IProductRepository
 {
-    private readonly AppDbContext _context;
+    private readonly ModuleADbContext _context;
 
-    public ProductRepository(AppDbContext context) => _context = context;
+    public ProductRepository(ModuleADbContext context) => _context = context;
 
     public async Task<Product?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await _context.Products
-            .AsNoTracking()  // required on all read queries
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id, ct);
 
     public async Task<IReadOnlyList<Product>> GetAllAsync(CancellationToken ct = default)
@@ -241,12 +265,12 @@ public sealed class ProductRepository : IProductRepository
     public async Task AddAsync(Product product, CancellationToken ct = default)
         => await _context.Products.AddAsync(product, ct);
 
-    // Update and Delete are sync — EF Core tracks the change in memory
     public void Update(Product product) => _context.Products.Update(product);
     public void Delete(Product product) => _context.Products.Remove(product);
 }
 
 // ✅ Fluent API configuration — keep separate from entity class
+// src/Modules/ModuleAModule/ModuleA.Infrastructure/Persistence/Configurations/ProductConfiguration.cs
 public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 {
     public void Configure(EntityTypeBuilder<Product> builder)
@@ -262,7 +286,6 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             .HasConversion<string>()
             .HasMaxLength(20);
 
-        // Owned type (Value Object) mapping
         builder.OwnsOne(p => p.Price, price =>
         {
             price.Property(m => m.Amount)
@@ -284,10 +307,11 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 
 ```csharp
 // ✅ Controller — thin, no business logic, always uses ISender
+// src/Modules/ModuleAModule/ModuleA.Api/Controllers/ProductsController.cs
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/products")]
-[Authorize] // Every controller requires auth by default
+[Authorize]
 public sealed class ProductsController : ControllerBase
 {
     private readonly ISender _sender;
@@ -334,10 +358,28 @@ public async Task<IActionResult> Create([FromBody] CreateProductRequest req)
 
 ---
 
+## Contracts Layer Rules
+
+```csharp
+// ✅ Contracts expose DTOs and interfaces for cross-module communication
+// src/Modules/ModuleAModule/ModuleA.Contracts/DTOs/ProductResponse.cs
+public sealed record ProductResponse(Guid Id, string Name, decimal Price, string Currency);
+
+// ✅ Interface that other modules can consume
+// src/Modules/ModuleAModule/ModuleA.Contracts/IModuleAService.cs
+public interface IModuleAService
+{
+    Task<ProductResponse?> GetProductAsync(Guid productId, CancellationToken ct = default);
+}
+```
+
+---
+
 ## Testing Rules
 
 ```csharp
 // ✅ Unit test structure — Arrange / Act / Assert, one concept per test
+// src/Tests/ModuleA.Test/Application/CreateProductCommandHandlerTests.cs
 public sealed class CreateProductCommandHandlerTests
 {
     private readonly IProductRepository _repository = Substitute.For<IProductRepository>();
@@ -350,13 +392,10 @@ public sealed class CreateProductCommandHandlerTests
     [Fact]
     public async Task Handle_WhenCommandIsValid_ReturnsSuccessWithNewId()
     {
-        // Arrange
         var command = new CreateProductCommand("Laptop", "High-end laptop", 1500m, "USD", 10);
 
-        // Act
         var result = await _sut.Handle(command, CancellationToken.None);
 
-        // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().NotBeEmpty();
         await _repository.Received(1).AddAsync(
@@ -370,17 +409,12 @@ public sealed class CreateProductCommandHandlerTests
     [InlineData("   ")]
     public async Task Handle_WhenNameIsEmpty_ReturnsValidationError(string? name)
     {
-        // Arrange
         var command = new CreateProductCommand(name!, "Desc", 100m, "USD", 5);
 
-        // Act
         var result = await _sut.Handle(command, CancellationToken.None);
 
-        // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Validation);
-
-        // Verify no side effects occurred
         await _repository.DidNotReceive().AddAsync(
             Arg.Any<Product>(), Arg.Any<CancellationToken>());
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
@@ -426,3 +460,4 @@ The agent and Copilot must never suggest:
 - ❌ `Console.WriteLine` or `Debug.WriteLine` — use `ILogger<T>`
 - ❌ Nullable reference type warnings suppressed with `!` without a comment
 - ❌ Empty `catch` blocks that swallow exceptions silently
+- ❌ Direct references between module internals — use Contracts

@@ -1,4 +1,4 @@
-# AGENTS.md — Payments Module
+# AGENTS.md — ModuleB Module
 
 > Extends the root `AGENTS.md`. Read that file first, then this one.
 > Rules here **override** the root document for this module only.
@@ -7,7 +7,7 @@
 
 ## Context
 
-Stripe payment provider integration.
+ModuleB domain (for example: Stripe payment provider integration).
 Every financial operation here is **irreversible in production** — apply double validation
 before persisting anything.
 
@@ -46,7 +46,7 @@ Are you implementing or modifying the Stripe webhook?
 docker run --rm -p 12111:12111 stripe/stripe-mock:latest
 
 # Run only this module's tests
-dotnet test tests/MyApi.IntegrationTests --filter "Category=Payments"
+dotnet test tests/MyApi.IntegrationTests --filter "Category=ModuleB"
 ```
 
 ## Required Secrets

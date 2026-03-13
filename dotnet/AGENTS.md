@@ -8,8 +8,8 @@
 
 ## What is this project?
 
-Enterprise REST API built with **ASP.NET Core .NET 8 (LTS)** following **Clean Architecture**.
-Multiple business domains organized as modules inside a modular monolith.
+Enterprise REST API built with **ASP.NET Core .NET 10 (LTS)** following a **Modular Monolith** with **Clean Architecture** per module.
+Each business domain lives in its own module under `src/Modules/`.
 
 - Code language: **English**
 - Database: **PostgreSQL 16**
@@ -60,21 +60,24 @@ docker-compose up -d
 # Development cycle
 dotnet restore
 dotnet build
-dotnet run --project src/MyApi.Api
+dotnet run --project src/Api/MyApi
 
 # Tests
-dotnet test                                           # all tests
-dotnet test tests/MyApi.UnitTests                    # unit only (no Docker)
-dotnet test tests/MyApi.IntegrationTests             # integration (requires Docker)
-dotnet test tests/MyApi.ArchTests                    # architecture rules
+dotnet test                                                      # all tests
+dotnet test src/Tests/ModuleA.Test                               # single module
+dotnet test src/Tests/ModuleB.Test                               # single module
 
 # Migrations — see ia/skills/ef-migrations/SKILL.md for the full process
-dotnet ef migrations add <Name> --project src/MyApi.Infrastructure --startup-project src/MyApi.Api
-dotnet ef database update --project src/MyApi.Infrastructure --startup-project src/MyApi.Api
+dotnet ef migrations add <Name> \
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi
+dotnet ef database update \
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi
 
 # Local secrets (first time only, per machine)
-dotnet user-secrets set "Jwt:Secret" "dev-key-min-32-chars-local-only!!" --project src/MyApi.Api
-dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Database=myapi_dev;Username=postgres;Password=dev" --project src/MyApi.Api
+dotnet user-secrets set "Jwt:Secret" "dev-key-min-32-chars-local-only!!" --project src/Api/MyApi
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Database=myapi_dev;Username=postgres;Password=dev" --project src/Api/MyApi
 
 # Check for vulnerable packages
 dotnet list package --vulnerable --include-transitive
@@ -86,31 +89,66 @@ dotnet list package --vulnerable --include-transitive
 
 ```
 src/
-  MyApi.Domain/          ← Entities, Value Objects, domain errors. ZERO external dependencies.
-  MyApi.Application/     ← Commands, Queries, Handlers, Validators, Behaviors (MediatR)
-  MyApi.Infrastructure/  ← EF Core, repositories, external services, migrations
-  MyApi.Api/             ← Controllers, Middleware, Program.cs
+  Api/
+    MyApi/                         ← Host. Program.cs, DI wiring, middleware. References every {Module}.Api.
+  CommonUtils/                     ← Shared helpers and cross-cutting concerns used by any module.
+  Modules/
+    ModuleAModule/                 ← One folder per business domain
+      ModuleA.Api/                 ← Controllers / endpoints for this module
+      ModuleA.Application/         ← Commands, Queries, Handlers, Validators, Behaviors (MediatR)
+      ModuleA.Contracts/           ← DTOs and interfaces exposed to other modules
+      ModuleA.DbMigrator/          ← EF Core migrations owned by this module
+      ModuleA.Domain/              ← Entities, Value Objects, domain errors. ZERO external deps.
+      ModuleA.Infrastructure/      ← EF Core DbContext, repositories, external service clients
+      AGENTS.md                    ← Module-specific overrides (read after this file)
+    ModuleBModule/
+      ModuleB.Api/
+      ModuleB.Application/
+      ModuleB.Contracts/
+      ModuleB.Domain/
+      ModuleB.Infrastructure/
+      AGENTS.md
+  Tests/
+    ModuleA.Test/                  ← Unit + integration tests for the ModuleA module
+    ModuleB.Test/
 
-tests/
-  MyApi.UnitTests/       ← Domain + Application. No real I/O.
-  MyApi.IntegrationTests/← HTTP endpoints with Testcontainers + WebApplicationFactory
-  MyApi.ArchTests/       ← Architecture rules with NetArchTest
-
-ia/skills/             ← Specialized skills — read per the routing instruction above
+ia/skills/                         ← Specialized skills — read per the routing instruction above
 ```
+
+### Layer responsibilities
+
+| Layer | What lives here | May reference |
+|---|---|---|
+| `{Module}.Domain` | Entities, Value Objects, domain errors, repository interfaces | Nothing external |
+| `{Module}.Application` | Commands, Queries, Handlers, Validators, Behaviors | `Domain`, `Contracts` |
+| `{Module}.Contracts` | DTOs, shared interfaces exposed to other modules | Nothing (or `CommonUtils`) |
+| `{Module}.Infrastructure` | EF DbContext, repository implementations, external clients | `Application`, `Domain`, `Contracts` |
+| `{Module}.Api` | Controllers, module DI registration | `Application`, `Contracts` |
+| `{Module}.DbMigrator` | EF Core migration files | `Infrastructure` |
+| `CommonUtils` | Cross-cutting helpers (extensions, base classes) | Nothing project-specific |
+| `Api/MyApi` (host) | Program.cs, global middleware, DI composition root | Every `{Module}.Api` |
 
 **Dependency rule — NEVER violate:**
 ```
 Domain ← Application ← Infrastructure
-                     ← Api  (DI registration only)
+                     ← {Module}.Api  (DI registration only)
+
+Contracts can be referenced by any layer or by other modules.
+CommonUtils can be referenced by any project.
+Host (Api/MyApi) references all {Module}.Api projects — nothing else.
 ```
-- `Domain` references nothing external
-- `Application` references `Domain` only
-- `Infrastructure` references `Application` + `Domain`
-- `Api` references `Application` + `Infrastructure` (DI registration only)
 
 > If a module has its own `AGENTS.md`, read it after this file.
 > Its rules override this document for that specific module.
+
+### Module variants
+
+Not every module needs all layers. Two standard shapes:
+
+**Full module** (owns data): Api, Application, Contracts, DbMigrator, Domain, Infrastructure
+**Lightweight module** (no persistence): Api, Application, Contracts
+
+Choose the shape that fits the domain. Add layers later only when needed.
 
 ---
 
@@ -189,7 +227,8 @@ CODE
 ARCHITECTURE
 [ ] No business logic in Controllers
 [ ] No DbContext directly in Handlers
-[ ] Layer dependency rules not violated (verify with dotnet test tests/MyApi.ArchTests)
+[ ] Layer dependency rules not violated (verify with architecture tests)
+[ ] Cross-module communication only through Contracts
 
 TESTS
 [ ] dotnet test fully green
@@ -203,6 +242,6 @@ SECURITY
 [ ] Errors return ProblemDetails
 
 DATABASE
-[ ] Migration generated if model changed
+[ ] Migration generated if model changed (in the module's DbMigrator)
 [ ] AsNoTracking() on read-only queries
 ```

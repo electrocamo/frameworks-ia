@@ -35,6 +35,20 @@ Minimum coverage required:
   Api:            40%  (covered primarily by integration tests)
 ```
 
+## Test project location
+
+Each module has its own test project: `src/Tests/{Module}.Test/`
+
+```
+src/Tests/
+  ModuleA.Test/
+    Domain/              ← Domain entity and Value Object tests
+    Application/         ← Handler, validator, behavior tests
+    Integration/         ← HTTP endpoint tests with Testcontainers
+    Architecture/        ← Layer dependency tests with NetArchTest
+    Common/              ← Shared fixtures, helpers, factories
+```
+
 ---
 
 ## Unit Tests
@@ -42,12 +56,12 @@ Minimum coverage required:
 ### Base structure for a test class
 
 ```csharp
+// src/Tests/ModuleA.Test/Application/CreateProductCommandHandlerTests.cs
 public sealed class CreateProductCommandHandlerTests
 {
-    // Substitutes as readonly fields — xUnit creates a new instance per test method
     private readonly IProductRepository _repository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly CreateProductCommandHandler _sut; // System Under Test
+    private readonly CreateProductCommandHandler _sut;
 
     public CreateProductCommandHandlerTests()
     {
@@ -59,13 +73,10 @@ public sealed class CreateProductCommandHandlerTests
     [Fact]
     public async Task Handle_WhenCommandIsValid_ReturnsSuccessWithId()
     {
-        // Arrange
         var command = new CreateProductCommand("Laptop", "High-end laptop", 1500m, "USD", 10);
 
-        // Act
         var result = await _sut.Handle(command, CancellationToken.None);
 
-        // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().NotBeEmpty();
         await _repository.Received(1)
@@ -79,13 +90,10 @@ public sealed class CreateProductCommandHandlerTests
     [InlineData(null)]
     public async Task Handle_WhenNameIsInvalid_ReturnsValidationError(string? name)
     {
-        // Arrange
         var command = new CreateProductCommand(name!, "Desc", 100m, "USD", 5);
 
-        // Act
         var result = await _sut.Handle(command, CancellationToken.None);
 
-        // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Validation);
         await _repository.DidNotReceive().AddAsync(Arg.Any<Product>(), Arg.Any<CancellationToken>());
@@ -97,30 +105,23 @@ public sealed class CreateProductCommandHandlerTests
 ### NSubstitute — essential patterns
 
 ```csharp
-// Configure return value
 _repository.GetByIdAsync(productId, Arg.Any<CancellationToken>())
     .Returns(product);
 
-// Return null (resource not found)
 _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
     .Returns((Product?)null);
 
-// Verify called exactly once
 await _repository.Received(1).AddAsync(Arg.Any<Product>(), Arg.Any<CancellationToken>());
 
-// Verify NOT called
 await _repository.DidNotReceive().AddAsync(Arg.Any<Product>(), Arg.Any<CancellationToken>());
 
-// Verify with argument condition
 await _repository.Received(1)
     .AddAsync(Arg.Is<Product>(p => p.Name == "Laptop" && p.Status == ProductStatus.Active),
               Arg.Any<CancellationToken>());
 
-// Simulate exception
 _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
     .Throws(new TimeoutException());
 
-// Mock TimeProvider (.NET 8) — never use DateTime.Now or Thread.Sleep in tests
 var timeProvider = Substitute.For<TimeProvider>();
 timeProvider.GetUtcNow().Returns(new DateTimeOffset(2025, 1, 15, 10, 0, 0, TimeSpan.Zero));
 ```
@@ -128,27 +129,22 @@ timeProvider.GetUtcNow().Returns(new DateTimeOffset(2025, 1, 15, 10, 0, 0, TimeS
 ### FluentAssertions — essential patterns
 
 ```csharp
-// Result Pattern
 result.IsSuccess.Should().BeTrue();
 result.IsFailure.Should().BeTrue();
 result.Error.Code.Should().Be("Product.NotFound");
 result.Error.Type.Should().Be(ErrorType.NotFound);
 
-// Values
 result.Value.Should().NotBeEmpty();
 result.Value.Should().Be(expectedValue);
 
-// Strings
 product.Name.Should().Be("Laptop");
 product.Name.Should().NotBeNullOrWhiteSpace();
 
-// Collections
 products.Should().HaveCount(3);
 products.Should().ContainSingle(p => p.Name == "Laptop");
 products.Should().BeInAscendingOrder(p => p.Name);
 products.Should().NotContainNulls();
 
-// Types
 result.Value.Should().BeOfType<ProductResponse>();
 ```
 
@@ -159,7 +155,7 @@ result.Value.Should().BeOfType<ProductResponse>();
 ### Setup with Testcontainers + WebApplicationFactory
 
 ```csharp
-// tests/MyApi.IntegrationTests/Common/IntegrationTestBase.cs
+// src/Tests/ModuleA.Test/Common/IntegrationTestBase.cs
 public sealed class IntegrationTestBase : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _db = new PostgreSqlBuilder()
@@ -174,7 +170,7 @@ public sealed class IntegrationTestBase : WebApplicationFactory<Program>, IAsync
         await _db.StartAsync();
         using var scope = Services.CreateScope();
         await scope.ServiceProvider
-            .GetRequiredService<AppDbContext>()
+            .GetRequiredService<ModuleADbContext>()
             .Database.MigrateAsync();
     }
 
@@ -188,8 +184,8 @@ public sealed class IntegrationTestBase : WebApplicationFactory<Program>, IAsync
     {
         builder.ConfigureTestServices(services =>
         {
-            services.RemoveAll<DbContextOptions<AppDbContext>>();
-            services.AddDbContext<AppDbContext>(o =>
+            services.RemoveAll<DbContextOptions<ModuleADbContext>>();
+            services.AddDbContext<ModuleADbContext>(o =>
                 o.UseNpgsql(_db.GetConnectionString()));
         });
     }
@@ -205,7 +201,7 @@ public sealed class IntegrationTestBase : WebApplicationFactory<Program>, IAsync
     public async Task ResetDatabaseAsync()
     {
         using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ModuleADbContext>();
         await db.Database.ExecuteSqlRawAsync(
             "TRUNCATE TABLE \"Products\", \"Orders\" RESTART IDENTITY CASCADE");
     }
@@ -215,9 +211,8 @@ public sealed class IntegrationTestBase : WebApplicationFactory<Program>, IAsync
 ### Integration test — standard structure
 
 ```csharp
-// IClassFixture: Docker container starts ONCE for the entire class
-// IAsyncLifetime: cleans data after each test method
-[Trait("Category", "Products")]
+// src/Tests/ModuleA.Test/Integration/ProductsApiTests.cs
+[Trait("Category", "ModuleA")]
 public sealed class ProductsApiTests : IClassFixture<IntegrationTestBase>, IAsyncLifetime
 {
     private readonly IntegrationTestBase _fixture;
@@ -235,13 +230,11 @@ public sealed class ProductsApiTests : IClassFixture<IntegrationTestBase>, IAsyn
     [Fact]
     public async Task POST_Products_WhenValid_Returns201WithLocation()
     {
-        // Arrange
         var request = new { Name = "Test Product", Description = "Desc",
                             Price = 99.99, Currency = "USD", StockQuantity = 5 };
-        // Act
+
         var response = await _client.PostAsJsonAsync("/api/v1/products", request);
 
-        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
     }
@@ -270,30 +263,30 @@ public sealed class ProductsApiTests : IClassFixture<IntegrationTestBase>, IAsyn
 ## Architecture Tests
 
 ```csharp
-// tests/MyApi.ArchTests/ArchitectureTests.cs
+// src/Tests/ModuleA.Test/Architecture/ArchitectureTests.cs
 public sealed class ArchitectureTests
 {
-    private static readonly Assembly Domain = typeof(Product).Assembly;
-    private static readonly Assembly Application = typeof(CreateProductCommand).Assembly;
-    private static readonly Assembly Infrastructure = typeof(AppDbContext).Assembly;
-    private static readonly Assembly Api = typeof(ProductsController).Assembly;
+    private static readonly Assembly Domain = typeof(Product).Assembly;             // ModuleA.Domain
+    private static readonly Assembly Application = typeof(CreateProductCommand).Assembly;  // ModuleA.Application
+    private static readonly Assembly Infrastructure = typeof(ModuleADbContext).Assembly;   // ModuleA.Infrastructure
+    private static readonly Assembly Api = typeof(ProductsController).Assembly;            // ModuleA.Api
 
     [Fact]
     public void Domain_ShouldNotHaveDependency_OnApplication()
         => Types.InAssembly(Domain).ShouldNot()
-            .HaveDependencyOn("MyApi.Application").GetResult()
+            .HaveDependencyOn("ModuleA.Application").GetResult()
             .IsSuccessful.Should().BeTrue();
 
     [Fact]
     public void Domain_ShouldNotHaveDependency_OnInfrastructure()
         => Types.InAssembly(Domain).ShouldNot()
-            .HaveDependencyOn("MyApi.Infrastructure").GetResult()
+            .HaveDependencyOn("ModuleA.Infrastructure").GetResult()
             .IsSuccessful.Should().BeTrue();
 
     [Fact]
     public void Application_ShouldNotHaveDependency_OnInfrastructure()
         => Types.InAssembly(Application).ShouldNot()
-            .HaveDependencyOn("MyApi.Infrastructure").GetResult()
+            .HaveDependencyOn("ModuleA.Infrastructure").GetResult()
             .IsSuccessful.Should().BeTrue();
 
     [Fact]
@@ -306,7 +299,7 @@ public sealed class ArchitectureTests
     public void Controllers_ShouldNotReferenceInfrastructure()
         => Types.InAssembly(Api).That()
             .Inherit(typeof(ControllerBase))
-            .ShouldNot().HaveDependencyOn("MyApi.Infrastructure")
+            .ShouldNot().HaveDependencyOn("ModuleA.Infrastructure")
             .GetResult().IsSuccessful.Should().BeTrue();
 }
 ```
