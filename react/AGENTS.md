@@ -12,9 +12,9 @@ SPA built with **React 18 + TypeScript strict + Vite**.
 Consumes external REST APIs with JWT authentication.
 
 - Code language: **English**
-- Package manager: **pnpm**
+- Package manager: **yarn**
 - Styles: **Tailwind CSS v4**
-- Deploy target: **Vercel**
+- Deploy target: **azure** 
 
 ---
 
@@ -35,7 +35,7 @@ Does your task involve...?
   Global state (Zustand), server state (TanStack Query), or caching
   → READ FIRST: ia/skills/state-and-data/SKILL.md
 
-  Forms, Zod validation, or React Hook Form
+  Forms, Zod validation, or Formik
   → READ FIRST: ia/skills/forms-and-validation/SKILL.md
 
   Reviewing a PR, auditing code, or performing a code review
@@ -74,14 +74,14 @@ When creating the project from scratch, execute in this exact order:
 
 ```bash
 # 1. Initialize with Vite
-pnpm create vite@latest . -- --template react-ts
-pnpm install
+yarn create vite@latest . -- --template react-ts
+yarn install
 
 # 2. Install all dependencies at once — never one by one
-pnpm add axios zod zustand @tanstack/react-query react-router-dom \
-         react-hook-form @hookform/resolvers
+yarn add axios zod redux @tanstack/react-query react-router-dom \
+         formik
 
-pnpm add -D vitest @vitest/coverage-v8 @testing-library/react \
+yarn add -D vitest @vitest/coverage-v8 @testing-library/react \
          @testing-library/user-event @testing-library/jest-dom \
          msw @playwright/test \
          eslint @eslint/js typescript-eslint \
@@ -97,9 +97,9 @@ mkdir -p ia/skills
 mkdir -p .github/workflows
 
 # 4. Set up git hooks
-pnpm exec husky init
-echo "pnpm exec lint-staged" > .husky/pre-commit
-echo "pnpm exec commitlint --edit \$1" > .husky/commit-msg
+yarn exec husky init
+echo "yarn exec lint-staged" > .husky/pre-commit
+echo "yarn exec commitlint --edit \$1" > .husky/commit-msg
 ```
 
 ---
@@ -108,25 +108,25 @@ echo "pnpm exec commitlint --edit \$1" > .husky/commit-msg
 
 ```bash
 # Development
-pnpm dev
-pnpm build
-pnpm preview
+yarn dev
+yarn build
+yarn preview
 
 # Code quality — all four must pass before every commit
-pnpm type-check    # zero TypeScript errors
-pnpm lint          # zero ESLint warnings or errors
-pnpm test:run      # all tests green
-pnpm build         # successful production build
+yarn type-check    # zero TypeScript errors
+yarn lint          # zero ESLint warnings or errors
+yarn test:run      # all tests green
+yarn build         # successful production build
 
 # Tests
-pnpm test          # watch mode (development)
-pnpm test:run      # single run (CI)
-pnpm test:coverage # with coverage report
-pnpm test:e2e      # Playwright end-to-end
+yarn test          # watch mode (development)
+yarn test:run      # single run (CI)
+yarn test:coverage # with coverage report
+yarn test:e2e      # Playwright end-to-end
 
 # Formatting
-pnpm format        # run prettier on src/
-pnpm format:check  # verify formatting without modifying files
+yarn format        # run prettier on src/
+yarn format:check  # verify formatting without modifying files
 ```
 
 ---
@@ -385,7 +385,7 @@ chore/*     ← config, deps, tooling
 
 **Pre-commit sequence — all four must pass:**
 ```bash
-pnpm type-check && pnpm lint && pnpm test:run && pnpm build
+yarn type-check && yarn lint && yarn test:run && yarn build
 ```
 
 ---
@@ -420,12 +420,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm install -g pnpm && pnpm install --frozen-lockfile
-      - run: pnpm type-check
-      - run: pnpm lint
-      - run: pnpm test:run -- --coverage
-      - run: pnpm build
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn type-check
+      - run: yarn lint
+      - run: yarn test:run -- --coverage
+      - run: yarn build
       - uses: codecov/codecov-action@v4
 ```
 
@@ -437,8 +437,8 @@ Do not mark a task as complete until all applicable items are green:
 
 ```
 CODE
-[ ] pnpm type-check → zero errors
-[ ] pnpm lint → zero warnings
+[ ] yarn type-check → zero errors
+[ ] yarn lint → zero warnings
 [ ] No any, @ts-ignore, or eslint-disable without justification
 [ ] No fetch/axios outside the service layer
 [ ] No hardcoded URLs or tokens
@@ -451,7 +451,7 @@ COMPONENTS
 [ ] Logic extracted to custom hooks
 
 TESTS
-[ ] pnpm test:run → fully green
+[ ] yarn test:run → fully green
 [ ] Tests for each state: loading, success, error, empty
 [ ] Coverage ≥ 85% on new code
 
@@ -461,5 +461,5 @@ SECURITY
 
 GIT
 [ ] Commit in Conventional Commits format
-[ ] pnpm build → successful build
+[ ] yarn build → successful build
 ```
