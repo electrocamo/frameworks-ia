@@ -27,7 +27,7 @@ Are you modifying the authenticated user state?
 ## Auth-Specific Rules
 
 **Token storage:**
-- Access token lives **in memory only** (`useAuthStore`) — never in `localStorage` or `sessionStorage`
+- Access token lives **in memory only** (`auth` slice in Redux store) — never in `localStorage` or `sessionStorage`
 - Refresh token lives in an `httpOnly` cookie — never accessible from JavaScript
 - Never log tokens, even partially
 - The axios interceptor handles token refresh automatically — do not duplicate that logic
@@ -63,7 +63,8 @@ src/features/auth/
     auth.service.ts
     auth.service.test.ts
   store/
-    auth.store.ts         ← access token in memory here
+    auth.slice.ts         ← access token in memory here
+    auth.selectors.ts     ← feature selectors for Redux state
   types/
     auth.types.ts
     auth.schemas.ts       ← shared Zod schemas

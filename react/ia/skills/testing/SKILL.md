@@ -88,6 +88,9 @@ import { render, type RenderOptions } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import type { ReactElement } from 'react'
+import { Provider } from 'react-redux'
+import { configureStore } from '@reduxjs/toolkit'
+import { authReducer } from '@/store/slices/auth.slice'
 
 // Test QueryClient — no retry, no cache between tests
 const createTestQueryClient = () =>
@@ -125,9 +128,18 @@ export const QueryWrapper = ({ children }: { children: React.ReactNode }) => {
 // Helper for tests requiring an authenticated user
 export const createAuthenticatedWrapper = () => {
   return ({ children }: { children: React.ReactNode }) => {
-    // Set auth state before rendering
-    useAuthStore.setState({ user: mockAuthUser, accessToken: 'mock-token' })
-    return <AllProviders>{children}</AllProviders>
+    const testStore = configureStore({
+      reducer: { auth: authReducer },
+      preloadedState: {
+        auth: { user: mockAuthUser, accessToken: 'mock-token' },
+      },
+    })
+
+    return (
+      <Provider store={testStore}>
+        <AllProviders>{children}</AllProviders>
+      </Provider>
+    )
   }
 }
 ```

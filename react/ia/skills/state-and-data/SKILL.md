@@ -1,12 +1,14 @@
 ---
 name: state-and-data
 description: >
-  Read when the task involves global state with Zustand, server state with
-  TanStack Query, data caching, synchronization between local and server
+  Read when the task involves global state with Redux Toolkit, server state
+  with TanStack Query, data caching, synchronization between local and server
   state, or advanced fetching patterns.
 triggers:
   - global state
-  - Zustand
+  - Redux
+  - Redux Toolkit
+  - react-redux
   - TanStack Query
   - useQuery
   - useMutation
@@ -28,12 +30,12 @@ Server State (data that lives on the server) → TanStack Query
   Examples: user list, products, API data, anything that can
             go stale, needs caching, or requires background sync
 
-Client State (UI state that lives in the browser) → Zustand
+Client State (UI state that lives in the browser) → Redux Toolkit
   Examples: open modal, authenticated user, UI preferences,
             anything purely local to the client session
 ```
 
-**Never put server state in Zustand. Never put client state in TanStack Query.**
+**Never put server state in Redux. Never put client state in TanStack Query.**
 
 ---
 
@@ -179,103 +181,93 @@ export const queryClient = new QueryClient({
 
 ---
 
-## Zustand — Patterns
+## Redux Toolkit — Patterns
 
-### Basic store
+### Store configuration
 
 ```typescript
-// src/features/auth/store/auth.store.ts
-import { create } from 'zustand'
-import { devtools } from 'zustand/middleware'
-import type { User } from '../types/auth.types'
+// src/store/store.ts
+import { configureStore } from '@reduxjs/toolkit'
+import { authReducer } from './slices/auth.slice'
+import { uiReducer } from './slices/ui.slice'
+
+export const store = configureStore({
+  reducer: {
+    auth: authReducer,
+    ui: uiReducer,
+  },
+  devTools: import.meta.env.DEV,
+})
+
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch
+```
+
+### Auth slice (token in memory only)
+
+```typescript
+// src/store/slices/auth.slice.ts
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+import type { User } from '@/features/auth/types/auth.types'
 
 interface AuthState {
-  // State
   user: User | null
   accessToken: string | null // in memory ONLY — never persisted
-
-  // Actions — named as verbs
-  setUser: (user: User) => void
-  setAccessToken: (token: string) => void
-  logout: () => void
 }
 
-export const useAuthStore = create<AuthState>()(
-  devtools(
-    (set) => ({
-      user: null,
-      accessToken: null,
-
-      setUser: (user) =>
-        set({ user }, false, 'auth/setUser'),
-
-      setAccessToken: (token) =>
-        set({ accessToken: token }, false, 'auth/setAccessToken'),
-
-      logout: () =>
-        set({ user: null, accessToken: null }, false, 'auth/logout'),
-    }),
-    { name: 'AuthStore' }
-  )
-)
-```
-
-### Store with selective persistence
-
-```typescript
-// src/store/ui.store.ts — UI preferences that should survive page reloads
-import { create } from 'zustand'
-import { persist, devtools } from 'zustand/middleware'
-
-interface UIState {
-  theme: 'light' | 'dark'
-  sidebarCollapsed: boolean
-  setTheme: (theme: 'light' | 'dark') => void
-  toggleSidebar: () => void
+const initialState: AuthState = {
+  user: null,
+  accessToken: null,
 }
 
-export const useUIStore = create<UIState>()(
-  devtools(
-    persist(
-      (set) => ({
-        theme: 'light',
-        sidebarCollapsed: false,
-        setTheme: (theme) => set({ theme }),
-        toggleSidebar: () =>
-          set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-      }),
-      {
-        name: 'ui-preferences',
-        // Only persist what matters — never persist sensitive data
-        partialize: (state) => ({
-          theme: state.theme,
-          sidebarCollapsed: state.sidebarCollapsed,
-        }),
-      }
-    ),
-    { name: 'UIStore' }
-  )
-)
+const authSlice = createSlice({
+  name: 'auth',
+  initialState,
+  reducers: {
+    setUser(state, action: PayloadAction<User>) {
+      state.user = action.payload
+    },
+    setAccessToken(state, action: PayloadAction<string>) {
+      state.accessToken = action.payload
+    },
+    logout(state) {
+      state.user = null
+      state.accessToken = null
+    },
+  },
+})
+
+export const authActions = authSlice.actions
+export const authReducer = authSlice.reducer
 ```
 
-### Selectors — prevent unnecessary re-renders
+### Typed hooks + selectors
 
 ```typescript
-// ✅ Granular selector — only re-renders when user.name changes
-const userName = useAuthStore((state) => state.user?.name)
+// src/store/hooks.ts
+import { useDispatch, useSelector } from 'react-redux'
+import type { AppDispatch, RootState } from './store'
 
-// ❌ Full store subscription — re-renders on any state change
-const { user, accessToken } = useAuthStore()
+export const useAppDispatch = () => useDispatch<AppDispatch>()
+export const useAppSelector = <T>(selector: (state: RootState) => T) =>
+  useSelector(selector)
+```
 
-// ✅ Multiple values: use shallow equality
-import { useShallow } from 'zustand/react/shallow'
+```typescript
+// ✅ Granular selectors — only re-render on selected slice changes
+const userName = useAppSelector((state) => state.auth.user?.name)
+const accessToken = useAppSelector((state) => state.auth.accessToken)
 
-const { theme, sidebarCollapsed } = useUIStore(
-  useShallow((state) => ({
-    theme: state.theme,
-    sidebarCollapsed: state.sidebarCollapsed,
-  }))
-)
+// ❌ Avoid selecting large objects if you only need one field
+const auth = useAppSelector((state) => state.auth)
+```
+
+### Selective persistence
+
+```typescript
+// Persist only non-sensitive UI preferences.
+// Never persist auth.accessToken.
+// Example strategy: persist `ui` reducer only.
 ```
 
 ---
@@ -286,9 +278,9 @@ const { theme, sidebarCollapsed } = useUIStore(
 |---|---|
 | List or detail data from API | `useQuery` (TanStack Query) |
 | Create / update / delete on server | `useMutation` (TanStack Query) |
-| Authenticated user (shared across features) | Zustand store |
+| Authenticated user (shared across features) | Redux store (`auth` slice) |
 | Modal open / closed (local to one component) | `useState` (local) |
-| Modal open / closed (triggered from anywhere) | Zustand store |
-| UI preferences that persist across sessions | Zustand + `persist` middleware |
+| Modal open / closed (triggered from anywhere) | Redux store (`ui` slice) |
+| UI preferences that persist across sessions | Redux + selective persistence |
 | Filter state for a single page | `useState` (local — no need for a store) |
 | Complex form with many fields | React Hook Form (see forms-and-validation skill) |

@@ -21,7 +21,7 @@ between this file and `AGENTS.md`, **`AGENTS.md` takes precedence**.
 | Build tool | Vite |
 | Routing | React Router v6 |
 | Server state | TanStack Query v5 |
-| Client state | Zustand v4 |
+| Client state | Redux Toolkit + React Redux |
 | Schema validation | Zod |
 | Forms | React Hook Form + @hookform/resolvers |
 | HTTP client | Axios (wrapped in `src/services/api-client.ts`) |
@@ -193,21 +193,22 @@ export const useUsersWithModal = () => {
 const { data: users } = useUsers()           // list from server
 const { data: product } = useProduct(id)     // detail from server
 
-// Authenticated user → Zustand (in memory, never localStorage)
-const user = useAuthStore(s => s.user)
-const logout = useAuthStore(s => s.logout)
+// Authenticated user → Redux store (in memory, never localStorage)
+const user = useAppSelector((state) => state.auth.user)
+const dispatch = useAppDispatch()
+const logout = () => dispatch(authActions.logout())
 
 // Local UI state (modal, toggle) → useState
 const [isOpen, setIsOpen] = useState(false)
 
-// UI preferences persisted across sessions → Zustand + persist
-const theme = useUIStore(s => s.theme)
+// UI preferences persisted across sessions → Redux + persistence strategy
+const theme = useAppSelector((state) => state.ui.theme)
 
-// ❌ Never — server state in Zustand
-const useUserStore = create(() => ({ users: [] }))  // use TanStack Query instead
+// ❌ Never — server state in Redux
+const users = useAppSelector((state) => state.users.list) // use TanStack Query instead
 
 // ❌ Never — access token in localStorage
-localStorage.setItem('token', accessToken)  // store in Zustand memory only
+localStorage.setItem('token', accessToken)  // store in Redux memory only
 ```
 
 ---
@@ -334,11 +335,11 @@ Copilot and agents must never suggest:
 - ❌ Default exports — named exports only
 - ❌ `fetch` or `axios` outside `src/services/` — use the api-client
 - ❌ `import.meta.env` outside `src/config/env.ts`
-- ❌ `localStorage` for access tokens — use Zustand in-memory store
+- ❌ `localStorage` for access tokens — use Redux in-memory store
 - ❌ API response data used without Zod validation
 - ❌ Components without loading + error + empty state handling
 - ❌ `useEffect` for data fetching — use TanStack Query
 - ❌ Hardcoded URLs, tokens, or environment values in source files
 - ❌ `console.log` in code committed to the repository
-- ❌ Props drilling beyond 2 levels — use Zustand or Context
+- ❌ Props drilling beyond 2 levels — use Redux or Context
 - ❌ Class components — functional components with hooks only

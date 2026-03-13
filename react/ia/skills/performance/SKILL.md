@@ -208,7 +208,7 @@ export const ThemeProvider = ({ children }) => {
   )
 }
 
-// Even better: use Zustand instead of Context for dynamic global state
+// Even better: use Redux Toolkit instead of Context for dynamic global state
 ```
 
 ---

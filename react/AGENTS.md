@@ -32,7 +32,7 @@ Does your task involve...?
   Writing, fixing, or improving tests (unit, integration, e2e)
   → READ FIRST: ia/skills/testing/SKILL.md
 
-  Global state (Zustand), server state (TanStack Query), or caching
+  Global state (Redux Toolkit), server state (TanStack Query), or caching
   → READ FIRST: ia/skills/state-and-data/SKILL.md
 
   Forms, Zod validation, or Formik
@@ -78,7 +78,7 @@ yarn create vite@latest . -- --template react-ts
 yarn install
 
 # 2. Install all dependencies at once — never one by one
-yarn add axios zod redux @tanstack/react-query react-router-dom \
+yarn add axios zod @reduxjs/toolkit react-redux @tanstack/react-query react-router-dom \
          formik
 
 yarn add -D vitest @vitest/coverage-v8 @testing-library/react \
@@ -439,7 +439,7 @@ const url = import.meta.env.VITE_API_URL
 - Every environment variable documented in `.env.example` with fake values
 - All external data validated with **Zod** before use in the application
 - `src/config/env.ts` is the **only** access point to `import.meta.env`
-- Access token lives **in memory only** (Zustand store) — never in `localStorage`
+- Access token lives **in memory only** (Redux store) — never in `localStorage`
 - Refresh token lives in `httpOnly` cookie — never accessible via JavaScript
 
 ---
