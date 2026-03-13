@@ -40,7 +40,7 @@ useEffect(() => {
   fetch('/api/users').then(r => r.json()).then(setUsers)
 }, [])
 
-// AXIOS OUTSIDE SERVICE LAYER
+// AXIOS OUTSIDE API LAYER
 const { data } = await axios.get('https://api.example.com/users')
 
 // ANY TYPE IN TYPESCRIPT
@@ -73,7 +73,7 @@ return (
 // HARDCODED URL
 const url = 'https://api.production.com/users'
 
-// import.meta.env ACCESSED DIRECTLY OUTSIDE config/env.ts
+// import.meta.env ACCESSED DIRECTLY OUTSIDE API INFRA FILES
 const apiUrl = import.meta.env.VITE_API_URL
 ```
 
@@ -86,7 +86,7 @@ const apiUrl = import.meta.env.VITE_API_URL
 [ ] No secrets or tokens in source files
 [ ] No console.log with user or sensitive data
 [ ] All external data validated with Zod before use
-[ ] Environment variables accessed only through src/config/env.ts
+[ ] Environment variables accessed only in centralized infra files (e.g. src/api/httpInterceptor.ts)
 ```
 
 ### Correctness
@@ -100,7 +100,7 @@ const apiUrl = import.meta.env.VITE_API_URL
 
 ### Architecture
 ```
-[ ] Zero fetch/axios calls outside src/services/
+[ ] Zero fetch/axios calls outside src/api/ and approved service orchestrators
 [ ] Zero business logic inside JSX
 [ ] Named exports only — zero default exports
 [ ] Logic in custom hooks, presentation in components
@@ -141,7 +141,7 @@ const apiUrl = import.meta.env.VITE_API_URL
 
 ```markdown
 🚨 BLOCKING: There is a fetch call directly inside the component.
-Move the call to src/features/users/services/user.service.ts
+Move the call to src/api/apiUsers.ts (or the feature service orchestrator)
 and access the data through a useUsers() hook backed by TanStack Query.
 
 💡 SUGGESTION: Consider useCallback here — onSelectUser is recreated

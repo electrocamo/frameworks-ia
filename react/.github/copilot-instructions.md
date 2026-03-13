@@ -24,7 +24,7 @@ between this file and `AGENTS.md`, **`AGENTS.md` takes precedence**.
 | Client state | Redux Toolkit + React Redux |
 | Schema validation | Zod |
 | Forms | React Hook Form + @hookform/resolvers |
-| HTTP client | Axios (wrapped in `src/services/api-client.ts`) |
+| HTTP client | Axios (wrapped in `src/api/httpInterceptor.ts`) |
 | Styles | Tailwind CSS v4 |
 | Unit/integration tests | Vitest + React Testing Library + MSW |
 | E2E tests | Playwright |
@@ -142,7 +142,7 @@ export const UserService = {
   },
 }
 
-// ❌ Never — axios or fetch called directly outside src/services/
+// ❌ Never — axios or fetch called directly outside src/api/ and approved service orchestrators
 const { data } = await axios.get('https://api.example.com/users')  // in a component
 fetch('/api/users').then(...)                                       // in a hook
 ```
@@ -297,11 +297,10 @@ const validate = () => {
 ## Environment Variables — Rules
 
 ```typescript
-// ✅ Only valid access point — src/config/env.ts
-import { env } from '@/config/env'
-const url = env.VITE_API_URL
+// ✅ Access import.meta.env only in centralized infra files
+const url = import.meta.env.VITE_API_URL
 
-// ❌ Never — access import.meta.env outside config/env.ts
+// ❌ Never — access import.meta.env inside feature components
 const url = import.meta.env.VITE_API_URL   // in a component
 const key = import.meta.env.VITE_API_KEY   // in a service
 ```
@@ -333,8 +332,8 @@ Copilot and agents must never suggest:
 - ❌ `any` type — use `unknown` + type guards, or generics
 - ❌ `// @ts-ignore` or `// eslint-disable` — fix the root cause
 - ❌ Default exports — named exports only
-- ❌ `fetch` or `axios` outside `src/services/` — use the api-client
-- ❌ `import.meta.env` outside `src/config/env.ts`
+- ❌ `fetch` or `axios` outside `src/api/` and approved service orchestrators
+- ❌ `import.meta.env` outside centralized infra files (e.g. `src/api/httpInterceptor.ts`)
 - ❌ `localStorage` for access tokens — use Redux in-memory store
 - ❌ API response data used without Zod validation
 - ❌ Components without loading + error + empty state handling

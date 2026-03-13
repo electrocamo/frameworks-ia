@@ -37,7 +37,7 @@ They have memory and complexity costs. Use them only when there is evidence of a
 ## Lazy Loading — always for page components
 
 ```typescript
-// src/app/router.tsx
+// src/router/AppRouter.tsx
 // ALL page components must be lazy — they reduce the initial bundle
 
 import { lazy, Suspense } from 'react'

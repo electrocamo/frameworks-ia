@@ -24,7 +24,7 @@ triggers:
 3. hooks/use[Feature].ts          ← logic with TanStack Query
 4. components/[Feature].tsx        ← pure presentation
 5. [Feature].test.tsx              ← co-located component tests
-6. Update router.tsx               ← only if a new route is needed
+6. Update `src/router/AppRouter.tsx` ← only if a new route is needed
 ```
 
 **Never skip steps. Never generate a component without its test file.**
@@ -62,7 +62,7 @@ export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 
 ```typescript
 // src/features/users/services/user.service.ts
-import { apiClient } from "@/services/api-client";
+import { apiClient } from "@/api/httpInterceptor";
 import {
   UserSchema,
   UserListSchema,
@@ -236,7 +236,7 @@ describe('UserList', () => {
 ## Step 6 — New Route (only when needed)
 
 ```typescript
-// src/app/router.tsx
+// src/router/AppRouter.tsx
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { PageSkeleton } from '@/components/ui/PageSkeleton'
@@ -274,17 +274,18 @@ export type { User, CreateUserInput } from "./types/user.types";
 
 ---
 
-## api-client.ts — reference configuration
+## httpInterceptor.ts — reference configuration
 
 ```typescript
-// src/services/api-client.ts
+// src/api/httpInterceptor.ts
 import axios, { type AxiosError } from "axios";
-import { env } from "@/config/env";
 import { store } from "@/store/store";
 import { authActions } from "@/store/slices/auth.slice";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL as string;
+
 export const apiClient = axios.create({
-  baseURL: env.VITE_API_URL,
+  baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
   timeout: 10_000,
 });

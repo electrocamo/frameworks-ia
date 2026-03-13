@@ -92,7 +92,7 @@ yarn add -D vitest @vitest/coverage-v8 @testing-library/react \
 
 # 3. Create the full folder structure
 mkdir -p src/{app,components/{ui,features},features,hooks,services,store,types,utils,config,lib}
-mkdir -p src/tests/{mocks/fixtures,utils}
+mkdir -p src/shared/tests/{mocks/fixtures,utils,e2e}
 mkdir -p ia/skills
 mkdir -p .github/workflows
 
@@ -200,7 +200,12 @@ index.html
     │   ├── icons/
     │   ├── interfaces/
     │   ├── services/
-    │   └── utils/
+    │   ├── utils/
+    │   └── tests/
+    │       ├── setup.ts
+    │       ├── mocks/
+    │       ├── utils/
+    │       └── e2e/
     │
     └── [feature]/
     |   ├── index.ts                  # Barrel export — re-exports everything public from the feature
@@ -307,11 +312,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/tests/setup.ts'],
+    setupFiles: ['./src/shared/tests/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      exclude: ['node_modules', 'src/tests', '**/*.d.ts', '**/*.config.*'],
+      exclude: ['node_modules', 'src/shared/tests', '**/*.d.ts', '**/*.config.*'],
       thresholds: {
         global: { branches: 80, functions: 85, lines: 85, statements: 85 },
       },
@@ -323,32 +328,18 @@ export default defineConfig({
 })
 ```
 
-### `src/config/env.ts`
+### `Environment files in src/config/`
 ```typescript
-// Single entry point for all environment variables.
-// Throws at startup if any required variable is missing or invalid.
-import { z } from 'zod'
+Use the environment files defined by the project structure:
 
-const EnvSchema = z.object({
-  VITE_API_URL: z.string().url('VITE_API_URL must be a valid URL'),
-  VITE_APP_ENV: z.enum(['development', 'staging', 'production']),
-  VITE_APP_VERSION: z.string().default('0.0.1'),
-})
+- `src/config/.env.local`
+- `src/config/.env.dev`
+- `src/config/.env.qa`
+- `src/config/.env.prod`
 
-const parsed = EnvSchema.safeParse(import.meta.env)
-
-if (!parsed.success) {
-  console.error('Invalid environment variables:', parsed.error.flatten().fieldErrors)
-  throw new Error('Invalid environment variables. Check .env.example for required variables.')
-}
-
-export const env = parsed.data
-
-// ✅ Correct usage anywhere in the app:
-// import { env } from '@/config/env'
-// const url = env.VITE_API_URL
-
-// ❌ Never access import.meta.env directly outside this file
+Access `import.meta.env` only from centralized infra files (for example
+`src/api/httpInterceptor.ts`) and never spread environment reads across
+feature components.
 ```
 
 ### `.env.example`
@@ -400,7 +391,7 @@ VITE_APP_VERSION=0.0.1
 
 ### Data fetching
 - Zero `fetch` or `axios` calls directly in components or `useEffect`
-- All API calls go through `src/services/api-client.ts`
+- All API calls go through `src/api/httpInterceptor.ts` and `src/api/api[Domain].ts`
 - All server queries use TanStack Query (`useQuery` / `useMutation`)
 
 **Forbidden patterns:**
@@ -426,7 +417,7 @@ const TOKEN = 'sk-live-abc123'
 // ❌ console.log in non-development code
 console.log(userData)
 
-// ❌ import.meta.env outside config/env.ts
+// ❌ import.meta.env inside feature components
 const url = import.meta.env.VITE_API_URL
 ```
 
@@ -438,7 +429,7 @@ const url = import.meta.env.VITE_API_URL
 - `.env.local` always in `.gitignore`
 - Every environment variable documented in `.env.example` with fake values
 - All external data validated with **Zod** before use in the application
-- `src/config/env.ts` is the **only** access point to `import.meta.env`
+- `src/api/httpInterceptor.ts` is the preferred access point to `import.meta.env`
 - Access token lives **in memory only** (Redux store) — never in `localStorage`
 - Refresh token lives in `httpOnly` cookie — never accessible via JavaScript
 

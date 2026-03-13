@@ -41,7 +41,7 @@ Are you modifying the authenticated user state?
 - The same schemas are used in both the form (React Hook Form) and the API response validation
 
 **Auth tests:**
-- Use `createAuthenticatedWrapper()` from `src/tests/utils/test-utils.tsx`
+- Use `createAuthenticatedWrapper()` from `src/shared/tests/utils/test-utils.tsx`
   for tests that require an authenticated user
 - Never hardcode tokens in tests — use the `mockAuthToken` helper
 

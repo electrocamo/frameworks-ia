@@ -158,7 +158,7 @@ const prefetchProduct = usePrefetchProduct()
 ### QueryClient configuration
 
 ```typescript
-// src/lib/query-client.ts
+// src/shared/services/query-client.ts
 import { QueryClient } from '@tanstack/react-query'
 import { type AxiosError } from 'axios'
 

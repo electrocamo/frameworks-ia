@@ -40,7 +40,7 @@ Minimum coverage thresholds (CI fails below these):
 ## Global Setup
 
 ```typescript
-// src/tests/setup.ts
+// src/shared/tests/setup.ts
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
 import { server } from './mocks/server'
@@ -52,14 +52,14 @@ afterAll(() => server.close())
 ```
 
 ```typescript
-// src/tests/mocks/server.ts
+// src/shared/tests/mocks/server.ts
 import { setupServer } from 'msw/node'
 import { handlers } from './handlers'
 export const server = setupServer(...handlers)
 ```
 
 ```typescript
-// src/tests/mocks/handlers.ts
+// src/shared/tests/mocks/handlers.ts
 import { http, HttpResponse } from 'msw'
 import { mockUsers } from './fixtures/users'
 
@@ -83,7 +83,7 @@ export const handlers = [
 ```
 
 ```typescript
-// src/tests/utils/test-utils.tsx
+// src/shared/tests/utils/test-utils.tsx
 import { render, type RenderOptions } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -150,8 +150,8 @@ export const createAuthenticatedWrapper = () => {
 
 ```typescript
 // src/features/users/components/UserList.test.tsx
-import { render, screen, waitFor } from '@/tests/utils/test-utils'
-import { server } from '@/tests/mocks/server'
+import { render, screen, waitFor } from '@/shared/tests/utils/test-utils'
+import { server } from '@/shared/tests/mocks/server'
 import { http, HttpResponse } from 'msw'
 import { UserList } from './UserList'
 
@@ -212,9 +212,9 @@ describe('UserList', () => {
 ```typescript
 // src/features/users/hooks/useUsers.test.ts
 import { renderHook, waitFor } from '@testing-library/react'
-import { server } from '@/tests/mocks/server'
+import { server } from '@/shared/tests/mocks/server'
 import { http, HttpResponse } from 'msw'
-import { QueryWrapper } from '@/tests/utils/test-utils'
+import { QueryWrapper } from '@/shared/tests/utils/test-utils'
 import { useUsers } from './useUsers'
 
 describe('useUsers', () => {
@@ -258,7 +258,7 @@ describe('useUsers', () => {
 ```typescript
 // src/features/users/hooks/useCreateUser.test.ts
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { QueryWrapper } from '@/tests/utils/test-utils'
+import { QueryWrapper } from '@/shared/tests/utils/test-utils'
 import { useCreateUser } from './useUsers'
 
 describe('useCreateUser', () => {
@@ -289,7 +289,7 @@ describe('useCreateUser', () => {
 ## E2E Tests with Playwright
 
 ```typescript
-// src/tests/e2e/auth.spec.ts
+// src/shared/tests/e2e/auth.spec.ts
 import { test, expect } from '@playwright/test'
 
 test.describe('Authentication flow', () => {
