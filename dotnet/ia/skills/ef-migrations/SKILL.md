@@ -17,12 +17,19 @@ triggers:
 
 # SKILL: Entity Framework Core Migrations
 
+## Key difference — modular monolith
+
+Each module that owns data has its own `{Module}.DbMigrator` project and its own
+`DbContext` in `{Module}.Infrastructure`. Migrations are scoped per module.
+
+---
+
 ## Standard Process — always in this order
 
 ### 1. Modify the entity in Domain first
 
 ```csharp
-// src/MyApi.Domain/Entities/Product.cs
+// src/Modules/ModuleAModule/ModuleA.Domain/Entities/Product.cs
 public string? Sku { get; private set; }
 
 public static Result<Product> Create(string name, string? sku, Money price, int stock)
@@ -34,7 +41,7 @@ public static Result<Product> Create(string name, string? sku, Money price, int 
 ### 2. Update the Fluent API configuration in Infrastructure
 
 ```csharp
-// src/MyApi.Infrastructure/Persistence/Configurations/ProductConfiguration.cs
+// src/Modules/ModuleAModule/ModuleA.Infrastructure/Persistence/Configurations/ProductConfiguration.cs
 builder.Property(p => p.Sku)
     .HasMaxLength(50)
     .IsRequired(false);
@@ -48,9 +55,9 @@ builder.HasIndex(p => p.Sku)
 
 ```bash
 dotnet ef migrations add <MigrationName> \
-  --project src/MyApi.Infrastructure \
-  --startup-project src/MyApi.Api \
-  --output-dir Persistence/Migrations
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi \
+  --output-dir Migrations
 ```
 
 **Mandatory naming (descriptive PascalCase):**
@@ -66,7 +73,7 @@ dotnet ef migrations add <MigrationName> \
 
 ```
 ✅ AddSkuToProducts
-✅ CreatePaymentsTable
+✅ CreateModuleBTable
 ❌ Migration1
 ❌ Fix
 ❌ changes
@@ -74,7 +81,7 @@ dotnet ef migrations add <MigrationName> \
 
 ### 4. Review the generated file BEFORE applying
 
-Open the file in `src/MyApi.Infrastructure/Persistence/Migrations/` and verify:
+Open the file in `src/Modules/ModuleAModule/ModuleA.DbMigrator/Migrations/` and verify:
 - `Up()` does exactly what is expected
 - `Down()` reverts correctly — critical for rollback
 - No unexpected destructive operations (`DROP COLUMN`, `DROP TABLE`)
@@ -83,8 +90,8 @@ Open the file in `src/MyApi.Infrastructure/Persistence/Migrations/` and verify:
 
 ```bash
 dotnet ef database update \
-  --project src/MyApi.Infrastructure \
-  --startup-project src/MyApi.Api
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi
 ```
 
 ### 6. Verify
@@ -92,11 +99,11 @@ dotnet ef database update \
 ```bash
 # Confirm the migration was applied
 dotnet ef migrations list \
-  --project src/MyApi.Infrastructure \
-  --startup-project src/MyApi.Api
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi
 
-# Run integration tests to confirm nothing broke
-dotnet test tests/MyApi.IntegrationTests
+# Run the module's tests to confirm nothing broke
+dotnet test src/Tests/ModuleA.Test
 ```
 
 ---
@@ -131,11 +138,9 @@ protected override void Down(MigrationBuilder migrationBuilder)
 ```csharp
 protected override void Up(MigrationBuilder migrationBuilder)
 {
-    // 1. Add new columns as nullable first
     migrationBuilder.AddColumn<string>("FirstName", "Users", nullable: true);
     migrationBuilder.AddColumn<string>("LastName", "Users", nullable: true);
 
-    // 2. Populate data with SQL
     migrationBuilder.Sql(@"
         UPDATE ""Users""
         SET ""FirstName"" = SPLIT_PART(""FullName"", ' ', 1),
@@ -143,7 +148,6 @@ protected override void Up(MigrationBuilder migrationBuilder)
         WHERE ""FullName"" IS NOT NULL
     ");
 
-    // 3. Apply NOT NULL only after populating
     migrationBuilder.AlterColumn<string>("FirstName", "Users", nullable: false);
     migrationBuilder.AlterColumn<string>("LastName", "Users", nullable: false);
 }
@@ -174,8 +178,8 @@ protected override void Up(MigrationBuilder migrationBuilder)
 ```bash
 # Generate an idempotent SQL script for DBA review
 dotnet ef migrations script \
-  --project src/MyApi.Infrastructure \
-  --startup-project src/MyApi.Api \
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi \
   --idempotent \
   --output migration.sql
 
@@ -190,13 +194,13 @@ dotnet ef migrations script \
 ```bash
 # Revert to a previous migration (TARGET = the migration you want to land on)
 dotnet ef database update <PreviousMigrationName> \
-  --project src/MyApi.Infrastructure \
-  --startup-project src/MyApi.Api
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi
 
 # Remove the last migration file (only if NOT applied to any database)
 dotnet ef migrations remove \
-  --project src/MyApi.Infrastructure \
-  --startup-project src/MyApi.Api
+  --project src/Modules/ModuleAModule/ModuleA.DbMigrator \
+  --startup-project src/Api/MyApi
 ```
 
 ---
@@ -205,8 +209,8 @@ dotnet ef migrations remove \
 
 | Error | Cause | Solution |
 |---|---|---|
-| `No migrations configuration type was found` | Missing `IDesignTimeDbContextFactory` | Create the factory in Infrastructure |
-| `Unable to create an object of type 'AppDbContext'` | No connection string when generating | Verify `--startup-project` |
+| `No migrations configuration type was found` | Missing `IDesignTimeDbContextFactory` | Create the factory in the DbMigrator project |
+| `Unable to create an object of type 'DbContext'` | No connection string when generating | Verify `--startup-project` points to the host |
 | `There is already an object named X` | Partially applied migration | Check `__EFMigrationsHistory` and fix state |
 | `Cannot drop column because it's used by an index` | Wrong order in migration | Drop index before dropping column in `Up()` |
 | Empty migration generated | No changes detected | Verify `DbSet<T>` and `OnModelCreating` are updated |

@@ -20,7 +20,7 @@ triggers:
 ```
 1. Security       — hardcoded secrets, broken auth, SQL injection
 2. Correctness    — wrong logic, async bugs, unhandled edge cases
-3. Architecture   — layer violations, incorrect dependencies
+3. Architecture   — layer violations, incorrect dependencies, cross-module leaks
 4. Tests          — coverage, quality, missing scenarios
 5. Performance    — N+1 queries, missing pagination, no AsNoTracking
 6. Conventions    — naming, structure, documentation
@@ -61,6 +61,10 @@ catch (Exception) { }
 [HttpDelete("{id}")]
 public async Task<IActionResult> Delete(...)
 // ↑ missing explicit decision
+
+// CROSS-MODULE INTERNAL REFERENCE
+// A handler in ModuleBModule references ModuleA.Infrastructure directly
+// ↑ use ModuleA.Contracts instead
 ```
 
 ---
@@ -94,11 +98,13 @@ public async Task<IActionResult> Delete(...)
 [ ] Repository used instead of DbContext directly
 [ ] Commands/Queries are immutable records
 [ ] Handlers are sealed
+[ ] Cross-module communication only through Contracts
+[ ] No direct references between module internals
 ```
 
 ### Tests
 ```
-[ ] Unit test for each new Handler
+[ ] Unit test for each new Handler (in src/Tests/{Module}.Test/)
 [ ] Integration test for each new endpoint (including 401)
 [ ] Test names: Method_Scenario_ExpectedResult
 [ ] Arrange / Act / Assert structure

@@ -1,4 +1,4 @@
-# AGENTS.md — Catalog Module
+# AGENTS.md — ModuleA Module
 
 > Extends the root `AGENTS.md`. Read that file first, then this one.
 > Rules here **override** the root document for this module only.
@@ -7,7 +7,7 @@
 
 ## Context
 
-Product, category, and inventory management.
+ModuleA domain (for example: product, category, inventory management).
 Highest read volume in the system — queries are optimized with Redis cache.
 
 ---
@@ -53,8 +53,8 @@ Are you modifying the Product or Category entity?
 ## Module-Specific Commands
 
 ```bash
-# Run only catalog tests
-dotnet test tests/MyApi.IntegrationTests --filter "Category=Catalog"
+# Run only ModuleA tests
+dotnet test tests/MyApi.IntegrationTests --filter "Category=ModuleA"
 
 # Rebuild search indexes (only if confirmed corruption)
 dotnet run --project tools/MyApi.Tools -- rebuild-search-index

@@ -25,12 +25,25 @@ Domain → Application → Infrastructure → Api → Tests
 **Never start with the Controller.** The domain defines the contract;
 the outer layers adapt to it.
 
+All paths below use the ModuleA module as an example. Replace `ModuleA` with
+your target module name.
+
+---
+
+## Step 0 — Identify the module
+
+Determine which module owns this feature. If none exists, create a new
+`{Module}Module/` folder under `src/Modules/` and decide the module shape:
+
+- **Full module** (owns data): `{Module}.Api`, `{Module}.Application`, `{Module}.Contracts`, `{Module}.DbMigrator`, `{Module}.Domain`, `{Module}.Infrastructure`
+- **Lightweight module** (no persistence): `{Module}.Api`, `{Module}.Application`, `{Module}.Contracts`
+
 ---
 
 ## Step 1 — Domain
 
 ```csharp
-// src/MyApi.Domain/Entities/Order.cs
+// src/Modules/ModuleAModule/ModuleA.Domain/Entities/Order.cs
 public sealed class Order : Entity
 {
     private Order() { }
@@ -39,7 +52,6 @@ public sealed class Order : Entity
     public Money Total { get; private set; } = default!;
     public OrderStatus Status { get; private set; }
 
-    // Factory method — returns Result<T>, never throws for business errors
     public static Result<Order> Create(string customerId, IReadOnlyList<OrderItem> items)
     {
         if (string.IsNullOrWhiteSpace(customerId))
@@ -57,7 +69,6 @@ public sealed class Order : Entity
         };
     }
 
-    // Business logic belongs here, not in handlers
     public Result Confirm()
     {
         if (Status != OrderStatus.Pending)
@@ -70,7 +81,7 @@ public sealed class Order : Entity
 ```
 
 ```csharp
-// src/MyApi.Domain/Errors/OrderErrors.cs
+// src/Modules/ModuleAModule/ModuleA.Domain/Errors/OrderErrors.cs
 public static class OrderErrors
 {
     public static readonly Error InvalidCustomer =
@@ -88,7 +99,7 @@ public static class OrderErrors
 ```
 
 ```csharp
-// src/MyApi.Domain/Repositories/IOrderRepository.cs
+// src/Modules/ModuleAModule/ModuleA.Domain/Repositories/IOrderRepository.cs
 public interface IOrderRepository
 {
     Task<Order?> GetByIdAsync(Guid id, CancellationToken ct = default);
@@ -105,7 +116,7 @@ public interface IOrderRepository
 ### Command + Handler + Validator
 
 ```csharp
-// src/MyApi.Application/Orders/Commands/CreateOrder/CreateOrderCommand.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Orders/Commands/CreateOrder/CreateOrderCommand.cs
 public sealed record CreateOrderCommand(
     string CustomerId,
     IReadOnlyList<OrderItemDto> Items
@@ -115,7 +126,7 @@ public sealed record OrderItemDto(Guid ProductId, int Quantity, decimal Price, s
 ```
 
 ```csharp
-// src/MyApi.Application/Orders/Commands/CreateOrder/CreateOrderCommandHandler.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Orders/Commands/CreateOrder/CreateOrderCommandHandler.cs
 public sealed class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Result<Guid>>
 {
     private readonly IOrderRepository _orders;
@@ -145,7 +156,7 @@ public sealed class CreateOrderCommandHandler : IRequestHandler<CreateOrderComma
 ```
 
 ```csharp
-// src/MyApi.Application/Orders/Commands/CreateOrder/CreateOrderCommandValidator.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Orders/Commands/CreateOrder/CreateOrderCommandValidator.cs
 public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
 {
     public CreateOrderCommandValidator()
@@ -170,17 +181,19 @@ public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderC
 ### Query + Handler + Response DTO
 
 ```csharp
-// src/MyApi.Application/Orders/Queries/GetOrderById/GetOrderByIdQuery.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Orders/Queries/GetOrderById/GetOrderByIdQuery.cs
 public sealed record GetOrderByIdQuery(Guid Id) : IRequest<Result<OrderResponse>>;
+```
 
-// src/MyApi.Application/Orders/Queries/GetOrderById/OrderResponse.cs
+```csharp
+// src/Modules/ModuleAModule/ModuleA.Contracts/DTOs/OrderResponse.cs
 public sealed record OrderResponse(
     Guid Id, string CustomerId, decimal Total,
     string Currency, string Status, DateTime CreatedAt);
 ```
 
 ```csharp
-// src/MyApi.Application/Orders/Queries/GetOrderById/GetOrderByIdQueryHandler.cs
+// src/Modules/ModuleAModule/ModuleA.Application/Orders/Queries/GetOrderById/GetOrderByIdQueryHandler.cs
 public sealed class GetOrderByIdQueryHandler : IRequestHandler<GetOrderByIdQuery, Result<OrderResponse>>
 {
     private readonly IOrderRepository _orders;
@@ -191,7 +204,7 @@ public sealed class GetOrderByIdQueryHandler : IRequestHandler<GetOrderByIdQuery
         var order = await _orders.GetByIdAsync(query.Id, ct);
         return order is null
             ? OrderErrors.NotFound(query.Id)
-            : order.ToResponse(); // extension method co-located with the query
+            : order.ToResponse();
     }
 }
 ```
@@ -201,11 +214,11 @@ public sealed class GetOrderByIdQueryHandler : IRequestHandler<GetOrderByIdQuery
 ## Step 3 — Infrastructure
 
 ```csharp
-// src/MyApi.Infrastructure/Repositories/OrderRepository.cs
+// src/Modules/ModuleAModule/ModuleA.Infrastructure/Repositories/OrderRepository.cs
 public sealed class OrderRepository : IOrderRepository
 {
-    private readonly AppDbContext _context;
-    public OrderRepository(AppDbContext context) => _context = context;
+    private readonly ModuleADbContext _context;
+    public OrderRepository(ModuleADbContext context) => _context = context;
 
     public async Task<Order?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await _context.Orders
@@ -220,7 +233,7 @@ public sealed class OrderRepository : IOrderRepository
 ```
 
 ```csharp
-// src/MyApi.Infrastructure/Persistence/Configurations/OrderConfiguration.cs
+// src/Modules/ModuleAModule/ModuleA.Infrastructure/Persistence/Configurations/OrderConfiguration.cs
 public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
@@ -238,11 +251,11 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
 }
 ```
 
-Add to `AppDbContext`: `public DbSet<Order> Orders => Set<Order>();`
+Add to the module's DbContext: `public DbSet<Order> Orders => Set<Order>();`
 
 Then generate the migration — see `ia/skills/ef-migrations/SKILL.md`.
 
-Register in `src/MyApi.Infrastructure/DependencyInjection.cs`:
+Register in `src/Modules/ModuleAModule/ModuleA.Infrastructure/DependencyInjection.cs`:
 
 ```csharp
 services.AddScoped<IOrderRepository, OrderRepository>();
@@ -253,7 +266,7 @@ services.AddScoped<IOrderRepository, OrderRepository>();
 ## Step 4 — Api
 
 ```csharp
-// src/MyApi.Api/Controllers/OrdersController.cs
+// src/Modules/ModuleAModule/ModuleA.Api/Controllers/OrdersController.cs
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/orders")]
@@ -298,3 +311,5 @@ Minimum required per feature:
 
 - Unit test for the Handler — happy path + at least 1 unhappy path
 - Integration test for the endpoint — including the `401 Unauthorized` test
+
+Test project location: `src/Tests/ModuleA.Test/`
